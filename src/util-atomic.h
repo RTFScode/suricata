@@ -37,7 +37,9 @@
  * (*) where spinlocks are unavailable, the threading api falls back to mutex
  */
 
-
+/*
+*	suricata封装的原子操作函数
+*/
 #ifndef __UTIL_ATOMIC_H__
 #define __UTIL_ATOMIC_H__
 

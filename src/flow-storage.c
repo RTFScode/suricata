@@ -31,6 +31,10 @@
 #include "flow-util.h"
 #include "util-unittest.h"
 
+/*
+*	流节点的一个附加内存
+*	TODO：附加作用后续进行解读
+*/
 unsigned int FlowStorageSize(void)
 {
     return StorageGetSize(STORAGE_FLOW);

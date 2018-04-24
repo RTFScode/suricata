@@ -78,6 +78,9 @@
  *  are freed. This isn't just about fairness. Under severe presure, the
  *  hash rows on top would be all freed and the time to find a flow to
  *  free increased with every run. */
+/*
+*	用于流抢占的时候记录上次抢占的桶位置
+*/
 SC_ATOMIC_DECLARE(unsigned int, flow_prune_idx);
 
 /** atomic flags */
@@ -420,11 +423,19 @@ void FlowHandlePacketUpdate(Flow *f, Packet *p)
  *  \param dtv decode thread vars (for flow output api thread data)
  *  \param p packet to handle flow for
  */
+/*
+*	FlowHandlePacket:每个数据包都会调用
+*	在流表中查找这个数据包的流
+*	存在---->更新流信息
+*	不存在-->创建新的流节点
+*	return：flow(流)
+*/
 void FlowHandlePacket(ThreadVars *tv, DecodeThreadVars *dtv, Packet *p)
 {
     /* Get this packet's flow from the hash. FlowHandlePacket() will setup
      * a new flow if nescesary. If we get NULL, we're out of flow memory.
      * The returned flow is locked. */
+    //获取流
     Flow *f = FlowGetFlowFromHash(tv, dtv, p, &p->flow);
     if (f == NULL)
         return;
@@ -442,16 +453,20 @@ void FlowInitConfig(char quiet)
 
     memset(&flow_config,  0, sizeof(flow_config));
     SC_ATOMIC_INIT(flow_flags);
-    SC_ATOMIC_INIT(flow_memuse);
-    SC_ATOMIC_INIT(flow_prune_idx);
+    SC_ATOMIC_INIT(flow_memuse);	//记录flow内存变化原子变量
+    SC_ATOMIC_INIT(flow_prune_idx);	//抢占时使用的idx
     SC_ATOMIC_INIT(flow_config.memcap);
+	/*
+	*	初始化队列内存和队列锁
+	*/
     FlowQueueInit(&flow_spare_q);
     FlowQueueInit(&flow_recycle_q);
 
     /* set defaults */
-    flow_config.hash_rand   = (uint32_t)RandomGet();
-    flow_config.hash_size   = FLOW_DEFAULT_HASHSIZE;
-    flow_config.prealloc    = FLOW_DEFAULT_PREALLOC;
+    flow_config.hash_rand   = (uint32_t)RandomGet();//获取一个随机值给hash_rand
+    flow_config.hash_size   = FLOW_DEFAULT_HASHSIZE;	//flow的哈希表大小65535
+    flow_config.prealloc    = FLOW_DEFAULT_PREALLOC;	//预申请flow个数10000
+    //设置flow的最大内存
     SC_ATOMIC_SET(flow_config.memcap, FLOW_DEFAULT_MEMCAP);
 
     /* If we have specific config, overwrite the defaults with them,
@@ -471,17 +486,18 @@ void FlowInitConfig(char quiet)
 
     /* Check if we have memcap and hash_size defined at config */
     const char *conf_val;
-    uint32_t configval = 0;
+    uint32_t configval = 0;	//** 不好的命名方式  和上面不统一的规范
 
     /** set config values for memcap, prealloc and hash_size */
     uint64_t flow_memcap_copy;
+	//配置文件中flow.memcap是128mb格式的字符串
     if ((ConfGet("flow.memcap", &conf_val)) == 1)
     {
         if (conf_val == NULL) {
             SCLogError(SC_ERR_INVALID_YAML_CONF_ENTRY,"Invalid value for flow.memcap: NULL");
 	    exit(EXIT_FAILURE);
         }
-
+		//将带单位的位置换算为字节为单位的uint64_t
         if (ParseSizeStringU64(conf_val, &flow_memcap_copy) < 0) {
             SCLogError(SC_ERR_SIZE_PARSE, "Error parsing flow.memcap "
                        "from conf file - %s.  Killing engine",
@@ -491,18 +507,20 @@ void FlowInitConfig(char quiet)
             SC_ATOMIC_SET(flow_config.memcap, flow_memcap_copy);
         }
     }
+	//获取哈希表大小
     if ((ConfGet("flow.hash-size", &conf_val)) == 1)
     {
         if (conf_val == NULL) {
             SCLogError(SC_ERR_INVALID_YAML_CONF_ENTRY,"Invalid value for flow.hash-size: NULL");
 	    exit(EXIT_FAILURE);
         }
-
+		//转换为uint32_t
         if (ByteExtractStringUint32(&configval, 10, strlen(conf_val),
                                     conf_val) > 0) {
             flow_config.hash_size = configval;
         }
     }
+	//获取预先申请的flow个数
     if ((ConfGet("flow.prealloc", &conf_val)) == 1)
     {
         if (conf_val == NULL) {
@@ -520,8 +538,11 @@ void FlowInitConfig(char quiet)
                flow_config.hash_size, flow_config.prealloc);
 
     /* alloc hash memory */
+	/*
+	*	hash_size * sizeof(FlowBucket)计算哈希表大小
+	*/		   
     uint64_t hash_size = flow_config.hash_size * sizeof(FlowBucket);
-    if (!(FLOW_CHECK_MEMCAP(hash_size))) {
+    if (!(FLOW_CHECK_MEMCAP(hash_size))) {//内存检查
         SCLogError(SC_ERR_FLOW_INIT, "allocating flow hash failed: "
                 "max flow memcap is smaller than projected hash size. "
                 "Memcap: %"PRIu64", Hash table size %"PRIu64". Calculate "
@@ -530,6 +551,7 @@ void FlowInitConfig(char quiet)
                 (uintmax_t)sizeof(FlowBucket));
         exit(EXIT_FAILURE);
     }
+	//进行对齐的内存分配，对齐数是CLS=64，封装的是memalign()函数
     flow_hash = SCMallocAligned(flow_config.hash_size * sizeof(FlowBucket), CLS);
     if (unlikely(flow_hash == NULL)) {
         SCLogError(SC_ERR_FATAL, "Fatal error encountered in FlowInitConfig. Exiting...");
@@ -539,9 +561,10 @@ void FlowInitConfig(char quiet)
 
     uint32_t i = 0;
     for (i = 0; i < flow_config.hash_size; i++) {
-        FBLOCK_INIT(&flow_hash[i]);
-        SC_ATOMIC_INIT(flow_hash[i].next_ts);
+        FBLOCK_INIT(&flow_hash[i]); //init fb locked
+        SC_ATOMIC_INIT(flow_hash[i].next_ts); //M:记录桶上超时的概率
     }
+	//flow内存使用增加桶使用的内存
     (void) SC_ATOMIC_ADD(flow_memuse, (flow_config.hash_size * sizeof(FlowBucket)));
 
     if (quiet == FALSE) {
@@ -560,13 +583,13 @@ void FlowInitConfig(char quiet)
                     ((uint64_t)SC_ATOMIC_GET(flow_memuse) + (uint64_t)sizeof(Flow)));
             exit(EXIT_FAILURE);
         }
-
+		//向系统申请一个flow的内存
         Flow *f = FlowAlloc();
         if (f == NULL) {
             SCLogError(SC_ERR_FLOW_INIT, "preallocating flow failed: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
-
+		//将预先申请的flow塞进空闲队列中
         FlowEnqueue(&flow_spare_q,f);
     }
 
@@ -576,7 +599,12 @@ void FlowInitConfig(char quiet)
         SCLogConfig("flow memory usage: %"PRIu64" bytes, maximum: %"PRIu64,
                 SC_ATOMIC_GET(flow_memuse), SC_ATOMIC_GET(flow_config.memcap));
     }
-
+	/*
+	*	设置流超时时间，保存在两个全局变量中
+	*	flow_timeouts_normal
+	*	flow_timeouts_emerg
+	*	两个数组通过枚举类型来区分协议类型
+	*/
     FlowInitFlowProto();
 
     return;
@@ -693,13 +721,18 @@ void FlowInitFlowProto(void)
     const char *emergency_established = NULL;
     const char *emergency_closed = NULL;
     const char *emergency_bypassed = NULL;
-
+	
+	//获取配置文件中的超时时间
     ConfNode *flow_timeouts = ConfGetNode("flow-timeouts");
     if (flow_timeouts != NULL) {
         ConfNode *proto = NULL;
         uint32_t configval = 0;
 
-        /* Defaults. */
+		/*	设置各种类型的流超时时间，其中包括Defaults、TCP、UDP、ICMP
+		*	设置各种状态流的超时时间，其中包括new、established、closed
+		*	还有在紧急状态，emergency状态下的超时时间
+		*/
+		/* Defaults. */
         proto = ConfNodeLookupChild(flow_timeouts, "default");
         if (proto != NULL) {
             new = ConfNodeLookupChildValue(proto, "new");
@@ -716,7 +749,7 @@ void FlowInitFlowProto(void)
 
             if (new != NULL &&
                 ByteExtractStringUint32(&configval, 10, strlen(new), new) > 0) {
-
+					
                     flow_timeouts_normal[FLOW_PROTO_DEFAULT].new_timeout = configval;
             }
             if (established != NULL &&
@@ -956,14 +989,18 @@ int FlowClearMemory(Flow* f, uint8_t proto_map)
     SCEnter();
 
     /* call the protocol specific free function if we have one */
+	//首先需要将流上面相关的内存释放掉
+	//eg.tcp重组相关的内存
     if (flow_freefuncs[proto_map].Freefunc != NULL) {
         flow_freefuncs[proto_map].Freefunc(f->protoctx);
     }
-
+	//释放flow的内存
+	//TODO:存在问题：内部的函数有些地方没看明白
     FlowFreeStorage(f);
 
+	//将flow的一些成员置位
     FLOW_RECYCLE(f);
-
+	
     SCReturnInt(1);
 }
 

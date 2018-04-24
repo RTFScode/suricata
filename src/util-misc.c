@@ -205,6 +205,7 @@ int ParseSizeStringU64(const char *size, uint64_t *res)
     double temp_res = 0;
 
     *res = 0;
+	//换算成字节为单位
     int r = ParseSizeString(size, &temp_res);
     if (r < 0)
         return r;

@@ -309,7 +309,7 @@ static void SignalHandlerSigHup(/*@unused@*/ int sig)
 #define _GLOBAL_MEM_
 /* This counter doesn't complain realloc's(), it's gives
  * an aproximation for the startup */
-size_t global_mem = 0;
+size_t global_mem = 0;	//记录suricata程序的内存使用总量
 #ifdef DBG_MEM_ALLOC_SKIP_STARTUP
 uint8_t print_mem_flag = 0;
 #else

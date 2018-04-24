@@ -56,18 +56,20 @@ Flow *FlowAlloc(void)
     if (!(FLOW_CHECK_MEMCAP(size))) {
         return NULL;
     }
-
+	//增加flow内存统计
     (void) SC_ATOMIC_ADD(flow_memuse, size);
 
-    f = SCMalloc(size);
+    f = SCMalloc(size);//封装malloc
     if (unlikely(f == NULL)) {
+		//分配失败减掉刚才增加的内存
         (void)SC_ATOMIC_SUB(flow_memuse, size);
         return NULL;
     }
     memset(f, 0, size);
 
     /* coverity[missing_lock] */
-    FLOW_INITIALIZE(f);
+	//手动初始化flow中的锁，以及一些原子变量
+    FLOW_INITIALIZE(f);	
     return f;
 }
 
@@ -144,6 +146,9 @@ static inline void FlowSetICMPv6CounterPart(Flow *f)
 
 /* initialize the flow from the first packet
  * we see from it. */
+/*
+*	当第一个数据包来新建流的时候需要进行这些初始化
+*/
 void FlowInit(Flow *f, const Packet *p)
 {
     SCEnter();

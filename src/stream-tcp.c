@@ -4977,7 +4977,7 @@ static int TcpSessionReuseDoneEnough(const Packet *p, const Flow *f, const TcpSe
 int TcpSessionPacketSsnReuse(const Packet *p, const Flow *f, const void *tcp_ssn)
 {
     if (p->proto == IPPROTO_TCP && p->tcph != NULL) {
-        if (TcpSessionPacketIsStreamStarter(p) == 1) {
+        if (TcpSessionPacketIsStreamStarter(p) == 1) {//检查是否是一个stream的有效开始包
             if (TcpSessionReuseDoneEnough(p, f, tcp_ssn) == 1) {
                 return 1;
             }

@@ -69,6 +69,9 @@ void FlowQueueDestroy (FlowQueue *q)
  *  \param q queue
  *  \param f flow
  */
+/*
+*	预申请到的流和释放的流都放在空闲队列中
+*/
 void FlowEnqueue (FlowQueue *q, Flow *f)
 {
 #ifdef DEBUG
@@ -78,6 +81,10 @@ void FlowEnqueue (FlowQueue *q, Flow *f)
     FQLOCK_LOCK(q);
 
     /* more flows in queue */
+	/*
+	*	queue是一个双向队列
+	*	新的流来的时候采用头插的方式
+	*/
     if (q->top != NULL) {
         f->lnext = q->top;
         q->top->lprev = f;
@@ -87,7 +94,7 @@ void FlowEnqueue (FlowQueue *q, Flow *f)
         q->top = f;
         q->bot = f;
     }
-    q->len++;
+    q->len++;	//记录队列的长度(空闲队列中flow的个数)
 #ifdef DBG_PERF
     if (q->len > q->dbg_maxlen)
         q->dbg_maxlen = q->len;
@@ -102,6 +109,11 @@ void FlowEnqueue (FlowQueue *q, Flow *f)
  *
  *  \retval f flow or NULL if empty list.
  */
+/*
+*	从空闲队列中获取一个flow
+*	获取失败返回NULL
+*	成功返回flow
+*/
 Flow *FlowDequeue (FlowQueue *q)
 {
     FQLOCK_LOCK(q);
@@ -113,11 +125,12 @@ Flow *FlowDequeue (FlowQueue *q)
     }
 
     /* more packets in queue */
+	//从双向队列的尾部拿一个flow
     if (q->bot->lprev != NULL) {
         q->bot = q->bot->lprev;
         q->bot->lnext = NULL;
     /* just the one we remove, so now empty */
-    } else {
+    } else {//空闲队列中只有一个节点
         q->top = NULL;
         q->bot = NULL;
     }

@@ -292,7 +292,12 @@ void FlowSetupPacket(Packet *p)
 }
 
 int TcpSessionPacketSsnReuse(const Packet *p, const Flow *f, void *tcp_ssn);
-
+/*
+*	判断p这个数据包是不是属于f这个流
+*	对比条件是：通过协议比对五元组信息
+*	return 1：属于这个流
+*	return 0：不属于这个流
+*/
 static inline int FlowCompare(Flow *f, const Packet *p)
 {
     if (p->proto == IPPROTO_ICMP) {
@@ -372,32 +377,48 @@ static inline void FlowUpdateCounter(ThreadVars *tv, DecodeThreadVars *dtv,
 static Flow *FlowGetNew(ThreadVars *tv, DecodeThreadVars *dtv, const Packet *p)
 {
     Flow *f = NULL;
-
+	//通过数据包的type检查合法性
     if (FlowCreateCheck(p) == 0) {
         return NULL;
     }
 
     /* get a flow from the spare queue */
+	/*
+	*	从空闲队列中获取一个流
+	*	NULL：获取失败
+	*/
     f = FlowDequeue(&flow_spare_q);
     if (f == NULL) {
         /* If we reached the max memcap, we get a used flow */
+		/*
+		*	如果流的内存已经到达上限值，则需要进行流抢占
+		*/
         if (!(FLOW_CHECK_MEMCAP(sizeof(Flow) + FlowStorageSize()))) {
             /* declare state of emergency */
+			/*
+			*	设置程序现在进入紧急状态
+			*	使用紧急状态的超时时间
+			*/
             if (!(SC_ATOMIC_GET(flow_flags) & FLOW_EMERGENCY)) {
                 SC_ATOMIC_OR(flow_flags, FLOW_EMERGENCY);
-
+				//进入紧急状态
                 FlowTimeoutsEmergency();
 
                 /* under high load, waking up the flow mgr each time leads
                  * to high cpu usage. Flows are not timed out much faster if
                  * we check a 1000 times a second. */
-                FlowWakeupFlowManagerThread();
+                 //防止在高负载的情况下性能消耗
+                 //设置扫描的上限
+                FlowWakeupFlowManagerThread();	
             }
-
+			/*
+			*	进行流抢占
+			*/
             f = FlowGetUsedFlow(tv, dtv);
             if (f == NULL) {
                 /* max memcap reached, so increments the counter */
                 if (tv != NULL && dtv != NULL) {
+					//更新线程的一些状态
                     StatsIncr(tv, dtv->counter_flow_memcap);
                 }
 
@@ -406,7 +427,11 @@ static Flow *FlowGetNew(ThreadVars *tv, DecodeThreadVars *dtv, const Packet *p)
             }
 
             /* freed a flow, but it's unlocked */
-        } else {
+        } 
+		/*
+		*	流内存没有满就去申请流
+		*/
+		else {
             /* now see if we can alloc a new flow */
             f = FlowAlloc();
             if (f == NULL) {
@@ -425,6 +450,7 @@ static Flow *FlowGetNew(ThreadVars *tv, DecodeThreadVars *dtv, const Packet *p)
     }
 
     FLOWLOCK_WRLOCK(f);
+	//更新线程对应的计数器
     FlowUpdateCounter(tv, dtv, p->proto);
     return f;
 }
@@ -485,14 +511,22 @@ Flow *FlowGetFlowFromHash(ThreadVars *tv, DecodeThreadVars *dtv, const Packet *p
     Flow *f = NULL;
 
     /* get our hash bucket and lock it */
-    const uint32_t hash = p->flow_hash;
+    const uint32_t hash = p->flow_hash;	//数据包的哈希值在解析数据包的时候已经设置
+    //定位到哈希桶上
     FlowBucket *fb = &flow_hash[hash % flow_config.hash_size];
-    FBLOCK_LOCK(fb);
+
+	FBLOCK_LOCK(fb);
 
     SCLogDebug("fb %p fb->head %p", fb, fb->head);
 
     /* see if the bucket already has a flow */
-    if (fb->head == NULL) {
+	/*
+	*	这里分为三种情况
+	*	a.桶上没有流存在------>新建流
+	*	b.桶上存在流，但是没有这个数据包的流---->新建流
+	*	c.桶上存在流，找到这个数据包的流------>更新流
+	*/
+    if (fb->head == NULL) {	//空桶---新建
         f = FlowGetNew(tv, dtv, p);
         if (f == NULL) {
             FBLOCK_UNLOCK(fb);
@@ -500,15 +534,20 @@ Flow *FlowGetFlowFromHash(ThreadVars *tv, DecodeThreadVars *dtv, const Packet *p
         }
 
         /* flow is locked */
+		/*
+		*	桶上的流是通过双向链表管理的
+		*/
         fb->head = f;
         fb->tail = f;
 
         /* got one, now lock, initialize and return */
-        FlowInit(f, p);
+        FlowInit(f, p);	//初始化流信息
         f->flow_hash = hash;
         f->fb = fb;
+		//更新流状态
         FlowUpdateState(f, FLOW_STATE_NEW);
 
+		//dest是p的指向flow的字段
         FlowReference(dest, f);
 
         FBLOCK_UNLOCK(fb);
@@ -516,17 +555,26 @@ Flow *FlowGetFlowFromHash(ThreadVars *tv, DecodeThreadVars *dtv, const Packet *p
     }
 
     /* ok, we have a flow in the bucket. Let's find out if it is our flow */
+	/*
+	*	这里说明fb桶上存在这个流
+	*	这里的写法有一个技巧：
+	*	每次更新完一个流，就把这个流放到桶的头部
+	*	所以第一次用数据包和第一个流进行对比可以提高效率
+	*	(一个流上的数据包会有很大可能是连续的到来)
+	*/
     f = fb->head;
 
     /* see if this is the flow we are looking for */
-    if (FlowCompare(f, p) == 0) {
+    if (FlowCompare(f, p) == 0) {//对比数据包是不是属于这个流
+    //return 0不属于
         Flow *pf = NULL; /* previous flow */
 
-        while (f) {
+        while (f) {//通过循环遍历这个桶
             pf = f;
             f = f->hnext;
 
-            if (f == NULL) {
+            if (f == NULL) {//如果遍历完没有找到，则新建
+            //并且挂在桶的尾部
                 f = pf->hnext = FlowGetNew(tv, dtv, p);
                 if (f == NULL) {
                     FBLOCK_UNLOCK(fb);
@@ -549,7 +597,10 @@ Flow *FlowGetFlowFromHash(ThreadVars *tv, DecodeThreadVars *dtv, const Packet *p
                 FBLOCK_UNLOCK(fb);
                 return f;
             }
-
+			/*
+			*	找到相应的流，进行更新
+			*	首先将这个流调整到桶的头部
+			*/
             if (FlowCompare(f, p) != 0) {
                 /* we found our flow, lets put it on top of the
                  * hash list -- this rewards active flows */
@@ -570,6 +621,7 @@ Flow *FlowGetFlowFromHash(ThreadVars *tv, DecodeThreadVars *dtv, const Packet *p
 
                 /* found our flow, lock & return */
                 FLOWLOCK_WRLOCK(f);
+				//TODO:??????????????
                 if (unlikely(TcpSessionPacketSsnReuse(p, f, f->protoctx) == 1)) {
                     f = TcpReuseReplace(tv, dtv, fb, f, hash, p);
                     if (f == NULL) {
@@ -586,6 +638,7 @@ Flow *FlowGetFlowFromHash(ThreadVars *tv, DecodeThreadVars *dtv, const Packet *p
         }
     }
 
+	//第一次FlowCompare找到流就直接到这一步
     /* lock & return */
     FLOWLOCK_WRLOCK(f);
     if (unlikely(TcpSessionPacketSsnReuse(p, f, f->protoctx) == 1)) {
@@ -617,8 +670,12 @@ Flow *FlowGetFlowFromHash(ThreadVars *tv, DecodeThreadVars *dtv, const Packet *p
  *
  *  \retval f flow or NULL
  */
+/*
+*	流抢占函数，在流表中找到一个合适的桶抢占第一个流
+*/
 static Flow *FlowGetUsedFlow(ThreadVars *tv, DecodeThreadVars *dtv)
 {
+	//idx：开始寻找抢占目标的桶下标
     uint32_t idx = SC_ATOMIC_GET(flow_prune_idx) % flow_config.hash_size;
     uint32_t cnt = flow_config.hash_size;
 
@@ -627,10 +684,14 @@ static Flow *FlowGetUsedFlow(ThreadVars *tv, DecodeThreadVars *dtv)
             idx = 0;
 
         FlowBucket *fb = &flow_hash[idx];
-
+		/*
+		*	流管理有两个锁
+		*	一个是桶锁，一个是流锁
+		*/
         if (FBLOCK_TRYLOCK(fb) != 0)
             continue;
 
+		//从链表尾部抢占
         Flow *f = fb->tail;
         if (f == NULL) {
             FBLOCK_UNLOCK(fb);
@@ -644,6 +705,8 @@ static Flow *FlowGetUsedFlow(ThreadVars *tv, DecodeThreadVars *dtv)
 
         /** never prune a flow that is used by a packet or stream msg
          *  we are currently processing in one of the threads */
+
+		//use_cnt是记录flow是否被其他线程使用
         if (SC_ATOMIC_GET(f->use_cnt) > 0) {
             FBLOCK_UNLOCK(fb);
             FLOWLOCK_UNLOCK(f);
@@ -651,6 +714,9 @@ static Flow *FlowGetUsedFlow(ThreadVars *tv, DecodeThreadVars *dtv)
         }
 
         /* remove from the hash */
+		/*
+		*	下面的代码可以封装为一个双向链表的节点释放函数
+		*/
         if (f->hprev != NULL)
             f->hprev->hnext = f->hnext;
         if (f->hnext != NULL)
@@ -663,10 +729,14 @@ static Flow *FlowGetUsedFlow(ThreadVars *tv, DecodeThreadVars *dtv)
         f->hnext = NULL;
         f->hprev = NULL;
         f->fb = NULL;
-        SC_ATOMIC_SET(fb->next_ts, 0);
+        SC_ATOMIC_SET(fb->next_ts, 0);	//将超时权重设置为0
         FBLOCK_UNLOCK(fb);
 
         int state = SC_ATOMIC_GET(f->flow_state);
+		/*
+		*	设置流状态
+		*	TODO:存在疑问：既然已经抢占掉，为什么还要设置状态？
+		*/
         if (state == FLOW_STATE_NEW)
             f->flow_end_flags |= FLOW_END_FLAG_STATE_NEW;
         else if (state == FLOW_STATE_ESTABLISHED)
@@ -684,15 +754,22 @@ static Flow *FlowGetUsedFlow(ThreadVars *tv, DecodeThreadVars *dtv)
             f->flow_end_flags |= FLOW_END_FLAG_EMERGENCY;
 
         /* invoke flow log api */
+		//调用flow的日志api，输出一些统计信息
         if (dtv && dtv->output_flow_thread_data)
             (void)OutputFlowLog(tv, dtv->output_flow_thread_data, f);
 
+		/*
+		*	flow清理函数
+		*	
+		*/
         FlowClearMemory(f, f->protomap);
 
+		//更新流的状态
         FlowUpdateState(f, FLOW_STATE_NEW);
 
         FLOWLOCK_UNLOCK(f);
-
+		//flow_prune_idx记录本次下次开始扫描的下标
+		//flow_config.hash_size - cnt结果是本次扫描的次数
         (void) SC_ATOMIC_ADD(flow_prune_idx, (flow_config.hash_size - cnt));
         return f;
     }

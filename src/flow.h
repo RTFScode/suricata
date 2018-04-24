@@ -248,6 +248,9 @@ typedef struct AppLayerParserState_ AppLayerParserState;
 #define FLOW_RESET_PE_DONE(f, dir) (((dir) & STREAM_TOSERVER) ? ((f)->flags &= ~FLOW_TS_PE_ALPROTO_DETECT_DONE) : ((f)->flags &= ~FLOW_TC_PE_ALPROTO_DETECT_DONE))
 
 /* global flow config */
+/*
+*	全局流配置结构体
+*/
 typedef struct FlowCnf_
 {
     uint32_t hash_rand;
@@ -460,7 +463,7 @@ typedef struct Flow_
 } Flow;
 
 enum FlowState {
-    FLOW_STATE_NEW = 0,
+    FLOW_STATE_NEW = 0,	
     FLOW_STATE_ESTABLISHED,
     FLOW_STATE_CLOSED,
     FLOW_STATE_LOCAL_BYPASSED,
@@ -585,6 +588,7 @@ static inline void FlowReference(Flow **d, Flow *f)
         if (*d == f)
             return;
 #endif
+		//新建的flow第一次会进行一个原子操作的use_cnt++
         FlowIncrUsecnt(f);
         *d = f;
     }

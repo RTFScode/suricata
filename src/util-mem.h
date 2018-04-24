@@ -51,7 +51,7 @@
 /* Need to define __mm_ function alternatives, since these are SSE only.
  */
 #include <malloc.h>
-#define _mm_malloc(a,b) memalign((b),(a))
+#define _mm_malloc(a,b) memalign((b),(a))	//分配a大小并且对齐在b倍数的内存
 #define _mm_free(a) free((a))
 #endif /* defined(__tile__) */
 

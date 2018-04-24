@@ -88,6 +88,7 @@ FlowProtoTimeout flow_timeouts_emerg[FLOW_PROTO_MAX];
 FlowProtoFreeFunc flow_freefuncs[FLOW_PROTO_MAX];
 
 /** spare/unused/prealloced flows live here */
+//flow_spare_q是预申请的流节点队列
 FlowQueue flow_spare_q;
 
 /** queue to pass flows to cleanup/log thread(s) */

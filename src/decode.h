@@ -635,6 +635,8 @@ typedef struct PacketQueue_ {
 } PacketQueue;
 
 /** \brief Structure to hold thread specific data for all decode modules */
+//保存所有解码模块(decode)的特定数据
+//主要有一些技术器
 typedef struct DecodeThreadVars_
 {
     /** Specific context for udp protocol detection (here atm) */

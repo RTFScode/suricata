@@ -90,7 +90,7 @@ void FlowTimeoutsInit(void)
 {
     SC_ATOMIC_SET(flow_timeouts, flow_timeouts_normal);
 }
-
+//设置流管理进入紧急状态，紧急状态下超时时间变短
 void FlowTimeoutsEmergency(void)
 {
     SC_ATOMIC_SET(flow_timeouts, flow_timeouts_emerg);
@@ -320,6 +320,7 @@ static uint32_t FlowManagerHashRowTimeout(Flow *f, struct timeval *ts,
         enum FlowState state = SC_ATOMIC_GET(f->flow_state);
 
         /* timeout logic goes here */
+		//判断是否超时
         if (FlowManagerFlowTimeout(f, state, ts, next_ts) == 0) {
 
             counters->flows_notimeout++;
@@ -432,7 +433,9 @@ static uint32_t FlowTimeoutHash(struct timeval *ts, uint32_t try_cnt,
 
     if (SC_ATOMIC_GET(flow_flags) & FLOW_EMERGENCY)
         emergency = 1;
-
+	//扫描一些桶，找到超时的流
+	//TODO:需要熟悉suricata使用的哈希算法
+	//因为流管理线程的扫描性能与哈希算法密切相关
     for (idx = hash_min; idx < hash_max; idx++) {
         FlowBucket *fb = &flow_hash[idx];
 
@@ -464,6 +467,7 @@ static uint32_t FlowTimeoutHash(struct timeval *ts, uint32_t try_cnt,
         int32_t next_ts = 0;
 
         /* we have a flow, or more than one */
+		//流超时处理
         cnt += FlowManagerHashRowTimeout(fb->tail, ts, emergency, counters, &next_ts);
 
         SC_ATOMIC_SET(fb->next_ts, next_ts);
@@ -594,7 +598,7 @@ static TmEcode FlowManagerThreadInit(ThreadVars *t, const void *initdata, void *
     FlowManagerThreadData *ftd = SCCalloc(1, sizeof(FlowManagerThreadData));
     if (ftd == NULL)
         return TM_ECODE_FAILED;
-
+	//flowmgr_cnt初始化是0
     ftd->instance = SC_ATOMIC_ADD(flowmgr_cnt, 1);
     SCLogDebug("flow manager instance %u", ftd->instance);
 
@@ -656,6 +660,9 @@ static TmEcode FlowManagerThreadDeinit(ThreadVars *t, void *data)
  *
  *  Keeps an eye on the spare list, alloc flows if needed...
  */
+/*
+*	流管理函数总入口
+*/ 
 static TmEcode FlowManager(ThreadVars *th_v, void *thread_data)
 {
     FlowManagerThreadData *ftd = thread_data;
@@ -705,6 +712,7 @@ static TmEcode FlowManager(ThreadVars *th_v, void *thread_data)
 
         /* try to time out flows */
         FlowTimeoutCounters counters = { 0, 0, 0, 0, 0,0,0,0,0,0,0,0,0,0,0};
+		//流超时处理函数
         FlowTimeoutHash(&ts, 0 /* check all */, ftd->min, ftd->max, &counters);
 
 

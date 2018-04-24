@@ -128,6 +128,7 @@
  *  \retval 1 it fits
  *  \retval 0 no fit
  */
+//检查flow的内存是否超过内存限定值
 #define FLOW_CHECK_MEMCAP(size) \
     ((((uint64_t)SC_ATOMIC_GET(flow_memuse) + (uint64_t)(size)) <= SC_ATOMIC_GET(flow_config.memcap)))
 

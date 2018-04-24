@@ -54,6 +54,7 @@ struct TmSlot_;
 #define THV_DEAD        (1 << 12) /**< thread has been joined with pthread_join() */
 
 /** \brief Per thread variable structure */
+//管理各自线程的结构体
 typedef struct ThreadVars_ {
     pthread_t t;
     char name[16];

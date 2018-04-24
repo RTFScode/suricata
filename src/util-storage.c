@@ -302,7 +302,10 @@ void StorageFreeById(Storage *storage, StorageEnum type, int id)
         }
     }
 }
-
+/*
+*	清理流上的内存
+*	storage：是每一个f后面的附件内存起始地址
+*/
 void StorageFreeAll(Storage *storage, StorageEnum type)
 {
     if (storage == NULL)
@@ -314,7 +317,10 @@ void StorageFreeAll(Storage *storage, StorageEnum type)
     if (storage_map == NULL)
         return;
 #endif
-
+/*
+*	具体释放流的流程
+*	TODO:释放的原理没有搞明白？
+*/
     Storage *store = storage;
     int i;
     for (i = 0; i < storage_max_id[type]; i++) {
