@@ -4533,7 +4533,7 @@ int StreamTcpPacket (ThreadVars *tv, Packet *p, StreamTcpThread *stt,
         SCLogDebug("wrong thread: flow has %u, we are %d", p->flow->thread_id, tv->id);
 #endif
     }
-
+	
     TcpSession *ssn = (TcpSession *)p->flow->protoctx;
 
     /* track TCP flags */
@@ -4573,6 +4573,7 @@ int StreamTcpPacket (ThreadVars *tv, Packet *p, StreamTcpThread *stt,
      * the IP only module, or from a reassembled msg and/or from an
      * applayer detection, then drop the rest of the packets of the
      * same stream and avoid inspecting it any further */
+     /* 流上有drop标记的数据包打上drop标记 */
     if (StreamTcpCheckFlowDrops(p) == 1) {
         SCLogDebug("This flow/stream triggered a drop rule");
         FlowSetNoPacketInspectionFlag(p->flow);
@@ -4985,7 +4986,7 @@ int TcpSessionPacketSsnReuse(const Packet *p, const Flow *f, const void *tcp_ssn
     }
     return 0;
 }
-
+/* 流重组函数入口 */
 TmEcode StreamTcp (ThreadVars *tv, Packet *p, void *data, PacketQueue *pq, PacketQueue *postpq)
 {
     StreamTcpThread *stt = (StreamTcpThread *)data;

@@ -38,7 +38,8 @@ void ParseSizeInit(void)
     const char *eb = NULL;
     int eo;
     int opts = 0;
-
+	//pcre是一个NFA正则引擎
+	//pcre_compile将PARSE_REGEX编译称为一个pcre内部表示结构，加快匹配速度
     parse_regex = pcre_compile(PARSE_REGEX, opts, &eb, &eo, NULL);
     if (parse_regex == NULL) {
         SCLogError(SC_ERR_PCRE_COMPILE, "Compile of \"%s\" failed at offset "

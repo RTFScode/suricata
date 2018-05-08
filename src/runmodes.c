@@ -82,11 +82,15 @@ typedef struct RunMode_ {
 } RunMode;
 
 typedef struct RunModes_ {
-    int no_of_runmodes;
-    RunMode *runmodes;
+	/*
+	*	&(runmodes[RUNMODE_PCAP_DEV].runmodes[runmodes[RUNMODE_PCAP_DEV].[no_of_runmodes]])
+	*	就表示一个具体的运行模式
+	*/
+	int no_of_runmodes;//表示一种抓包驱动下已经注册的运行模式个数
+    RunMode *runmodes;//RunMode结构记录worker等运行模式
 } RunModes;
 
-static RunModes runmodes[RUNMODE_USER_MAX];
+static RunModes runmodes[RUNMODE_USER_MAX];//通过下标标记抓包驱动的运行模式
 
 static char *active_runmode;
 
@@ -345,7 +349,7 @@ void RunModeDispatch(int runmode, const char *custom_mode)
             custom_mode = local_custom_mode;
         }
     }
-
+	//返回了相应的运行模式结构
     RunMode *mode = RunModeGetCustomMode(runmode, custom_mode);
     if (mode == NULL) {
         SCLogError(SC_ERR_RUNMODE, "The custom type \"%s\" doesn't exist "
@@ -421,7 +425,7 @@ void RunModeRegisterNewRunMode(int runmode, const char *name,
                    "been registered.  Please use an unique name");
         return;
     }
-
+	//注册新的模式
     ptmp = SCRealloc(runmodes[runmode].runmodes,
                      (runmodes[runmode].no_of_runmodes + 1) * sizeof(RunMode));
     if (ptmp == NULL) {

@@ -1769,7 +1769,7 @@ int StreamTcpReassembleHandleSegment(ThreadVars *tv, TcpReassemblyThreadCtx *ra_
         SCLogDebug("inline (%s) or PKT_PSEUDO_STREAM_END (%s)",
                 StreamTcpInlineMode()?"true":"false",
                 (p->flags & PKT_PSEUDO_STREAM_END) ?"true":"false");
-        if (StreamTcpReassembleAppLayer(tv, ra_ctx, ssn, stream, p, dir) < 0) {
+    if (StreamTcpReassembleAppLayer(tv, ra_ctx, ssn, stream, p, dir) < 0) {
             SCReturnInt(-1);
         }
     }

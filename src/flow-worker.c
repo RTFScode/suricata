@@ -1,3 +1,4 @@
+
 /* Copyright (C) 2016 Open Information Security Foundation
  *
  * You can copy, redistribute or modify this Program under the terms of
@@ -213,6 +214,7 @@ static TmEcode FlowWorker(ThreadVars *tv, Packet *p, void *data, PacketQueue *pr
         }
 
         FLOWWORKER_PROFILING_START(p, PROFILE_FLOWWORKER_STREAM);
+		//流重组的入口处
         StreamTcp(tv, p, fw->stream_thread, &fw->pq, NULL);
         FLOWWORKER_PROFILING_END(p, PROFILE_FLOWWORKER_STREAM);
 

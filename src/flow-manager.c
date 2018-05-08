@@ -809,7 +809,8 @@ static TmEcode FlowManager(ThreadVars *th_v, void *thread_data)
 }
 
 /** \brief spawn the flow manager thread */
-void FlowManagerThreadSpawn()
+void 
+FlowManagerThreadSpawn()
 {
 #ifdef AFLFUZZ_DISABLE_MGTTHREADS
     return;

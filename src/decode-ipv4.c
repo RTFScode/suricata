@@ -546,6 +546,7 @@ int DecodeIPV4(ThreadVars *tv, DecodeThreadVars *dtv, Packet *p, uint8_t *pkt, u
 
     /* If a fragment, pass off for re-assembly. */
     if (unlikely(IPV4_GET_IPOFFSET(p) > 0 || IPV4_GET_MF(p) == 1)) {
+		//返回空说明重组未完成，否则返回重组好的数据包
         Packet *rp = Defrag(tv, dtv, p, pq);
         if (rp != NULL) {
             PacketEnqueue(pq, rp);
@@ -569,6 +570,7 @@ int DecodeIPV4(ThreadVars *tv, DecodeThreadVars *dtv, Packet *p, uint8_t *pkt, u
 #endif /* DEBUG */
 
     /* check what next decoder to invoke */
+	/* 解析传输层数据 */
     switch (IPV4_GET_IPPROTO(p)) {
         case IPPROTO_TCP:
             DecodeTCP(tv, dtv, p, pkt + IPV4_GET_HLEN(p),

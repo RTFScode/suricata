@@ -99,6 +99,7 @@ static PktPool *ThreadPacketPoolCreate(void)
     TmqhPacketPoolInit();
 
     /* Create a new pool for this thread. */
+	//pool是一个线程的包池管理结构
     PktPool* pool = (PktPool*)SCMallocAligned(sizeof(PktPool), CLS);
     if (pool == NULL) {
         SCLogError(SC_ERR_MEM_ALLOC, "malloc failed");
@@ -181,7 +182,7 @@ void PacketPoolWaitForN(int n)
 
         /* count packets in our stack */
         p = my_pool->head;
-        while (p != NULL) {
+
             if (++i == n)
                 return;
 

@@ -165,10 +165,12 @@ void PacketFreeOrRelease(Packet *p)
 Packet *PacketGetFromQueueOrAlloc(void)
 {
     /* try the pool first */
+	//从各自线程的包池中获取一个packet的内存
     Packet *p = PacketPoolGetPacket();
 
     if (p == NULL) {
         /* non fatal, we're just not processing a packet then */
+		//获取失败就去malloc内存
         p = PacketGetFromAlloc();
     } else {
         PACKET_PROFILING_START(p);
